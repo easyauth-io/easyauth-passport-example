@@ -1,0 +1,19 @@
+{
+  "name": "easyauth-passport-example",
+  "version": "1.0.0",
+  "description": "Authentication example for Express Apps using EasyAuth Passport Strategy.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "easyauth",
+  "license": "MIT",
+  "dependencies": {
+    "@easyauth.io/passport-easyauth": "^1.0.0",
+    "dotenv": "^16.2.0",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "passport": "^0.6.0"
+  }
+}
