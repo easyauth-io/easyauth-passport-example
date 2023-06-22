@@ -2,8 +2,9 @@ const express = require('express');
 const session = require('express-session');
 const passport = require('passport');
 const app = express();
+const refresh = require('passport-oauth2-refresh');
 
-require('./strategy');
+const {strategy} = require('./strategy');
 require('dotenv').config();
 
 const PORT = process.env.PORT;
@@ -19,6 +20,38 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
+// App middleware to check and refresh the Access Token if it is expired.
+// Whenever you want to refresh the access token, call refresh.requestNewAccessToken with values as passed below.
+app.use((req, res, next) => {
+  if (
+    req.user?.tokenset &&
+    Date.now() / 1000 >= req.user?.tokenset.expires_at
+  ) {
+    refresh.requestNewAccessToken(
+      strategy.name,
+      req.user.tokenset.refresh_token,
+      function (err, accessToken, refreshToken, newTokenSet) {
+        req.user.tokenset.access_token = accessToken;
+        req.user.tokenset.refresh_token = refreshToken;
+        req.user.tokenset.expires_at =
+          Date.now() / 1000 + newTokenSet.expires_in;
+        req.session.save();
+        next();
+      }
+    );
+  } else {
+    next();
+  }
+});
+
+//A middleware to check user for protected routes.
+const isAuthenticated = (req, res, next) => {
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  res.redirect('/auth/easyauth/login');
+};
+
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
 
@@ -26,13 +59,13 @@ app.get('/', (req, res) => {
   res.send('EasyAuth Passport Home Page');
 });
 
-//LOGIN ROUTE
+//Login Route
 app.get(
   '/auth/easyauth/login',
   passport.authenticate('easyauth', {scope: 'openid'})
 );
 
-//CALLBACK ROUTE
+//Callback Route
 app.get(
   '/auth/easyauth/callback',
   passport.authenticate('easyauth', {failureRedirect: '/failed'}),
@@ -41,7 +74,7 @@ app.get(
   }
 );
 
-//LOGOUT ROUTE
+//Logout Route
 app.get('/auth/easyauth/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) {
@@ -52,14 +85,19 @@ app.get('/auth/easyauth/logout', (req, res) => {
   });
 });
 
-//FAILED ROUTE
+//Failed Route
 app.get('/failed', (req, res) => {
   res.send('Login Failed');
 });
 
-//SUCCESS ROUTE
+//Success Route
 app.get('/easyauthprofile', (req, res) => {
   res.send(`User: ${JSON.stringify(req.user)}`);
+});
+
+//Protected Route
+app.get('/protectedroute', isAuthenticated, (req, res) => {
+  res.send('You are an authenticated user.');
 });
 
 app.listen(PORT, () => {
