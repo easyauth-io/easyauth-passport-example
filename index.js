@@ -3,7 +3,6 @@ const session = require('express-session');
 const passport = require('passport');
 const app = express();
 const refresh = require('passport-oauth2-refresh');
-
 const {strategy} = require('./strategy');
 require('dotenv').config();
 
@@ -27,18 +26,26 @@ app.use((req, res, next) => {
     req.user?.tokenset &&
     Date.now() / 1000 >= req.user?.tokenset.expires_at
   ) {
-    refresh.requestNewAccessToken(
-      strategy.name,
-      req.user.tokenset.refresh_token,
-      function (err, accessToken, refreshToken, newTokenSet) {
-        req.user.tokenset.access_token = accessToken;
-        req.user.tokenset.refresh_token = refreshToken;
-        req.user.tokenset.expires_at =
-          Date.now() / 1000 + newTokenSet.expires_in;
-        req.session.save();
-        next();
-      }
-    );
+    try {
+      refresh.requestNewAccessToken(
+        strategy.name,
+        req.user.tokenset.refresh_token,
+        function (err, accessToken, refreshToken, newTokenSet) {
+          if (err) {
+            res.redirect('auth/easyauth/login');
+          } else {
+            req.user.tokenset.access_token = accessToken;
+            req.user.tokenset.refresh_token = refreshToken;
+            req.user.tokenset.expires_at =
+              Date.now() / 1000 + newTokenSet.expires_in;
+            req.session.save();
+            next();
+          }
+        }
+      );
+    } catch (error) {
+      res.redirect('auth/easyauth/login');
+    }
   } else {
     next();
   }
@@ -70,7 +77,7 @@ app.get(
   '/auth/easyauth/callback',
   passport.authenticate('easyauth', {failureRedirect: '/failed'}),
   (req, res) => {
-    res.redirect('/easyauthprofile');
+    res.redirect('/protectedroute');
   }
 );
 
@@ -87,17 +94,36 @@ app.get('/auth/easyauth/logout', (req, res) => {
 
 //Failed Route
 app.get('/failed', (req, res) => {
-  res.send('Login Failed');
+  res.send('Login Failed').status(500);
 });
 
-//Success Route
-app.get('/easyauthprofile', (req, res) => {
+//Protected success Route
+app.get('/protectedroute', isAuthenticated, (req, res) => {
   res.send(`User: ${JSON.stringify(req.user)}`);
 });
 
-//Protected Route
-app.get('/protectedroute', isAuthenticated, (req, res) => {
-  res.send('You are an authenticated user.');
+//Get EasyAuth profile
+app.get('/easyauthprofile', isAuthenticated, async (req, res) => {
+  try {
+    const accessToken = req.user.tokenset.access_token;
+    const response = await fetch(
+      new URL('/tenantbackend/api/profile', process.env.EASYAUTH_DISCOVERY_URL),
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+    if (response.ok) {
+      const userInfo = await response.json();
+      res.send(JSON.stringify(userInfo));
+    } else {
+      res.send('Failed to fetch User Info.').status(response.status);
+    }
+  } catch (error) {
+    res.send('Failed to fetch User Info').status(500);
+  }
 });
 
 app.listen(PORT, () => {
